@@ -1,5 +1,6 @@
 package com.rbkmoney.cashreg.service.mg.aggregate.mapper;
 
+import com.rbkmoney.cashreg.service.mg.aggregate.mapper.iface.Mapper;
 import com.rbkmoney.damsel.cashreg.status.Delivered;
 import com.rbkmoney.damsel.cashreg.status.Failed;
 import com.rbkmoney.damsel.cashreg.status.Status;
@@ -10,14 +11,7 @@ import com.rbkmoney.damsel.cashreg_processing.SessionResult;
 import org.springframework.stereotype.Component;
 
 @Component
-public class SessionFinishedChangeMapper implements ChangeMapper {
-
-    @Override
-    public boolean filter(Change change) {
-        return change.isSetSession()
-                && change.getSession().isSetPayload()
-                && change.getSession().getPayload().isSetFinished();
-    }
+public class SessionFinishedChangeMapper implements Mapper {
 
     @Override
     public CashReg map(Change change) {
@@ -32,5 +26,10 @@ public class SessionFinishedChangeMapper implements ChangeMapper {
             cashReg.setStatus(Status.delivered(new Delivered()));
         }
         return cashReg;
+    }
+
+    @Override
+    public ChangeType getChangeType() {
+        return ChangeType.SESSION_PAYLOAD_FINISHED;
     }
 }
