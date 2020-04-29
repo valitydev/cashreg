@@ -5,13 +5,14 @@ import com.rbkmoney.cashreg.service.dominant.model.ResponseDominantWrapper;
 import com.rbkmoney.cashreg.service.management.model.ExtraField;
 import com.rbkmoney.cashreg.service.pm.PartyManagementService;
 import com.rbkmoney.cashreg.utils.cashreg.creators.CashRegProviderCreators;
-import com.rbkmoney.damsel.cashreg.status.Pending;
-import com.rbkmoney.damsel.cashreg.status.Status;
-import com.rbkmoney.damsel.cashreg_domain.AccountInfo;
-import com.rbkmoney.damsel.cashreg_processing.CashReg;
-import com.rbkmoney.damsel.cashreg_processing.CashRegParams;
-import com.rbkmoney.damsel.cashreg_processing.Change;
-import com.rbkmoney.damsel.cashreg_processing.CreatedChange;
+import com.rbkmoney.damsel.cashreg.domain.AccountInfo;
+import com.rbkmoney.damsel.cashreg.processing.CashRegisterProvider;
+import com.rbkmoney.damsel.cashreg.processing.Change;
+import com.rbkmoney.damsel.cashreg.processing.CreatedChange;
+import com.rbkmoney.damsel.cashreg.processing.Receipt;
+import com.rbkmoney.damsel.cashreg.processing.ReceiptParams;
+import com.rbkmoney.damsel.cashreg.receipt.status.Pending;
+import com.rbkmoney.damsel.cashreg.receipt.status.Status;
 import com.rbkmoney.damsel.domain.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,41 +30,44 @@ public class ManagementAggregator {
     private final PartyManagementService partyManagementService;
     private final DominantService dominantService;
 
-    public Change toCashRegCreatedChange(CashRegParams params) {
+    public Change toCashRegCreatedChange(ReceiptParams params) {
         CreatedChange created = new CreatedChange();
-        CashReg cashReg = new CashReg();
-        cashReg.setCashregProviderId(params.getCashregProviderId());
-        cashReg.setCashregId(params.getCashregId());
-        cashReg.setPaymentInfo(params.getPaymentInfo());
-        cashReg.setType(params.getType());
-        cashReg.setShopId(params.getShopId());
-        cashReg.setPartyId(params.getPartyId());
-        cashReg.setStatus(Status.pending(new Pending()));
 
-        Long partyRevision = partyManagementService.getPartyRevision(params.getPartyId());
         Long domainRevision = null;
-
+        Long partyRevision = partyManagementService.getPartyRevision(params.getPartyId());
         Shop shop = partyManagementService.getShop(params.getShopId(), params.getPartyId(), partyRevision);
 
-        ResponseDominantWrapper<CashRegProviderObject> providerObject = dominantService.getCashRegProviderObject(
-                CashRegProviderCreators.createCashregProviderRef(cashReg.getCashregProviderId()),
+        // TODO: select provider, but now get first in list
+        CashRegisterProvider cashRegisterProvider = params.getProviders().get(0);
+        ResponseDominantWrapper<CashRegisterProviderObject> providerObject = dominantService.getCashRegisterProviderObject(
+                CashRegProviderCreators.createCashregProviderRef(cashRegisterProvider.getProviderId()),
                 domainRevision
         );
+
         domainRevision = providerObject.getRevisionVersion();
-
         Map<String, String> aggregateOptions = aggregateOptions(providerObject);
-        AccountInfo accountInfo = new AccountInfo();
         Contract contract = partyManagementService.getContract(params.getPartyId(), shop.getContractId(), partyRevision);
-        accountInfo.setLegalEntity(prepareLegalEntity(contract, aggregateOptions));
-        cashReg.setAccountInfo(accountInfo);
-        cashReg.setDomainRevision(domainRevision);
-        cashReg.setPartyRevision(partyRevision);
 
-        created.setCashreg(cashReg);
+        AccountInfo accountInfo = new AccountInfo();
+        accountInfo.setLegalEntity(prepareLegalEntity(contract, aggregateOptions));
+
+        Receipt receipt = new Receipt()
+                .setCashregProvider(cashRegisterProvider)
+                .setReceiptId(params.getReceiptId())
+                .setPaymentInfo(params.getPaymentInfo())
+                .setType(params.getType())
+                .setShopId(params.getShopId())
+                .setPartyId(params.getPartyId())
+                .setStatus(Status.pending(new Pending()))
+                .setAccountInfo(accountInfo)
+                .setDomainRevision(domainRevision)
+                .setPartyRevision(partyRevision);
+
+        created.setReceipt(receipt);
         return Change.created(created);
     }
 
-    private Map<String, String> aggregateOptions(ResponseDominantWrapper<CashRegProviderObject> wrapperProviderObject) {
+    private Map<String, String> aggregateOptions(ResponseDominantWrapper<CashRegisterProviderObject> wrapperProviderObject) {
         Proxy proxy = wrapperProviderObject.getResponse().getData().getProxy();
         ResponseDominantWrapper<ProxyObject> wrapperProxyObject = dominantService.getProxyObject(proxy.getRef(), wrapperProviderObject.getRevisionVersion());
         Map<String, String> proxyOptions = wrapperProxyObject.getResponse().getData().getOptions();
@@ -71,44 +75,44 @@ public class ManagementAggregator {
         return proxyOptions;
     }
 
-    public Map<String, String> aggregateOptions(com.rbkmoney.damsel.domain.CashRegProviderRef providerRef, Long domainRevision) {
-        ResponseDominantWrapper<CashRegProviderObject> wrapperProviderObject = dominantService.getCashRegProviderObject(providerRef, domainRevision);
+    public Map<String, String> aggregateOptions(com.rbkmoney.damsel.domain.CashRegisterProviderRef providerRef, Long domainRevision) {
+        ResponseDominantWrapper<CashRegisterProviderObject> wrapperProviderObject = dominantService.getCashRegisterProviderObject(providerRef, domainRevision);
         return aggregateOptions(wrapperProviderObject);
     }
 
-    private com.rbkmoney.damsel.cashreg_domain.LegalEntity prepareLegalEntity(Contract contract, Map<String, String> proxyOptions) {
+    private com.rbkmoney.damsel.cashreg.domain.LegalEntity prepareLegalEntity(Contract contract, Map<String, String> proxyOptions) {
         com.rbkmoney.damsel.domain.RussianLegalEntity russianLegalEntityDomain = contract.getContractor().getLegalEntity().getRussianLegalEntity();
 
-        com.rbkmoney.damsel.cashreg_domain.LegalEntity legalEntity = new com.rbkmoney.damsel.cashreg_domain.LegalEntity();
-        com.rbkmoney.damsel.cashreg_domain.RussianLegalEntity russianLegalEntity = new com.rbkmoney.damsel.cashreg_domain.RussianLegalEntity();
+        com.rbkmoney.damsel.cashreg.domain.RussianLegalEntity russianLegalEntity = new com.rbkmoney.damsel.cashreg.domain.RussianLegalEntity()
+                .setEmail(proxyOptions.get(ExtraField.RUSSIAN_LEGAL_ENTITY_EMAIL.getField()))
+                .setActualAddress(russianLegalEntityDomain.getActualAddress())
+                .setInn(russianLegalEntityDomain.getInn())
+                .setRegisteredNumber(russianLegalEntityDomain.getRegisteredNumber())
+                .setPostAddress(russianLegalEntityDomain.getPostAddress())
+                .setRegisteredName(russianLegalEntityDomain.getRegisteredName())
+                .setRepresentativeDocument(russianLegalEntityDomain.getRepresentativeDocument())
+                .setRepresentativeFullName(russianLegalEntityDomain.getRepresentativeFullName())
+                .setRepresentativePosition(russianLegalEntityDomain.getRepresentativePosition());
 
-        russianLegalEntity.setEmail(proxyOptions.get(ExtraField.RUSSIAN_LEGAL_ENTITY_EMAIL.getField()));
-        russianLegalEntity.setActualAddress(russianLegalEntityDomain.getActualAddress());
-        russianLegalEntity.setInn(russianLegalEntityDomain.getInn());
-        russianLegalEntity.setRegisteredNumber(russianLegalEntityDomain.getRegisteredNumber());
-        russianLegalEntity.setPostAddress(russianLegalEntityDomain.getPostAddress());
-        russianLegalEntity.setRegisteredName(russianLegalEntityDomain.getRegisteredName());
-        russianLegalEntity.setRepresentativeDocument(russianLegalEntityDomain.getRepresentativeDocument());
-        russianLegalEntity.setRepresentativeFullName(russianLegalEntityDomain.getRepresentativeFullName());
-        russianLegalEntity.setRepresentativePosition(russianLegalEntityDomain.getRepresentativePosition());
-
-        com.rbkmoney.damsel.cashreg_domain.RussianBankAccount russianBankAccount = new com.rbkmoney.damsel.cashreg_domain.RussianBankAccount();
         RussianBankAccount russianBankAccountIncome = russianLegalEntityDomain.getRussianBankAccount();
-        russianBankAccount.setAccount(russianBankAccountIncome.getAccount());
-        russianBankAccount.setBankBik(russianBankAccountIncome.getBankBik());
-        russianBankAccount.setBankName(russianBankAccountIncome.getBankName());
-        russianBankAccount.setBankPostAccount(russianBankAccountIncome.getBankPostAccount());
+        com.rbkmoney.damsel.cashreg.domain.RussianBankAccount russianBankAccount = new com.rbkmoney.damsel.cashreg.domain.RussianBankAccount()
+                .setAccount(russianBankAccountIncome.getAccount())
+                .setBankBik(russianBankAccountIncome.getBankBik())
+                .setBankName(russianBankAccountIncome.getBankName())
+                .setBankPostAccount(russianBankAccountIncome.getBankPostAccount());
+
         russianLegalEntity.setRussianBankAccount(russianBankAccount);
         russianLegalEntity.setTaxMode(extractTaxModeFromOptions(proxyOptions));
 
+        com.rbkmoney.damsel.cashreg.domain.LegalEntity legalEntity = new com.rbkmoney.damsel.cashreg.domain.LegalEntity();
         legalEntity.setRussianLegalEntity(russianLegalEntity);
         return legalEntity;
     }
 
-    public ProxyObject extractProxyObject(CashReg cashReg) {
-        ResponseDominantWrapper<CashRegProviderObject> wrapperProviderObject = dominantService.getCashRegProviderObject(
-                CashRegProviderCreators.createCashregProviderRef(cashReg.getCashregProviderId()),
-                cashReg.getDomainRevision()
+    public ProxyObject extractProxyObject(Receipt receipt) {
+        ResponseDominantWrapper<CashRegisterProviderObject> wrapperProviderObject = dominantService.getCashRegisterProviderObject(
+                CashRegProviderCreators.createCashregProviderRef(receipt.getCashregProvider().getProviderId()),
+                receipt.getDomainRevision()
         );
         return extractProxyObject(wrapperProviderObject.getResponse().getData().getProxy().getRef(), wrapperProviderObject.getRevisionVersion());
     }
