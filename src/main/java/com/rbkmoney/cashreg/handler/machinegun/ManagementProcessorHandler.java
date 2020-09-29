@@ -47,9 +47,9 @@ public class ManagementProcessorHandler extends AbstractProcessorHandler<Value, 
     }
 
     @Override
-    protected SignalResultData<Change> processSignalTimeout(TMachine<Change> tMachine, List<TMachineEvent<Change>> list) {
-        log.info("Request processSignalTimeout() machineId: {} list: {}", tMachine.getMachineId(), tMachine.getMachineEvent());
-        List<Change> changes = tMachine.getMachineEvent().stream().map(TMachineEvent::getData).collect(Collectors.toList());
+    protected SignalResultData<Change> processSignalTimeout(TMachine<Change> tMachine, List<TMachineEvent<Change>> tMachineEvents) {
+        log.info("Request processSignalTimeout() machineId: {}, event: {}, tMachineEvents {}", tMachine.getMachineId(), tMachine.getMachineEvent(), tMachineEvents);
+        List<Change> changes = tMachineEvents.stream().map(TMachineEvent::getData).collect(Collectors.toList());
         SourceData sourceData = managementService.signalTimeout(changes);
         changes.add(sourceData.getChange());
         SignalResultData<Change> resultData = new SignalResultData<>(
@@ -63,7 +63,7 @@ public class ManagementProcessorHandler extends AbstractProcessorHandler<Value, 
 
     @Override
     protected CallResultData<Change> processCall(String namespace, String machineId, Value args, List<TMachineEvent<Change>> tMachineEvents) {
-        throw new UnsupportedMethodException("UnsupportedMethod");
+        throw new UnsupportedMethodException("ProcessCall. UnsupportedMethod");
     }
 
 }
