@@ -5,9 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.rbkmoney.cashreg.service.exception.NotFoundException;
 import com.rbkmoney.cashreg.service.exception.PartyNotFoundException;
 import com.rbkmoney.cashreg.service.pm.PartyManagementService;
-import com.rbkmoney.damsel.domain.Contract;
-import com.rbkmoney.damsel.domain.Party;
-import com.rbkmoney.damsel.domain.Shop;
+import com.rbkmoney.damsel.domain.*;
 import com.rbkmoney.damsel.payment_processing.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.thrift.TException;
@@ -87,6 +85,19 @@ public class PartyManagementServiceImpl implements PartyManagementService {
         } catch (TException ex) {
             throw new RuntimeException(String.format("Failed to get party revision, partyId='%s'", partyId), ex);
         }
+    }
+
+    @Override
+    public Contractor getContractor(String partyId, String contractorId, Long revision) {
+        log.debug("Trying to get Contractor, partyId='{}', contractId='{}', revision='{}", partyId, contractorId, revision);
+        PartyRevisionParam partyRevisionParam = revision(revision);
+        Party party = getParty(partyId, partyRevisionParam);
+        PartyContractor partyContractor = party.getContractors().get(contractorId);
+        if (partyContractor == null) {
+            throw new NotFoundException(String.format("Contractor not found, partyId='%s', contractorId='%s'", party.getId(), contractorId));
+        }
+        log.debug("Contractor has been found, partyId='{}', contractorId='{}'", partyId, contractorId);
+        return partyContractor.getContractor();
     }
 
     private Party callCheckout(String partyId, PartyRevisionParam partyRevisionParam) {
